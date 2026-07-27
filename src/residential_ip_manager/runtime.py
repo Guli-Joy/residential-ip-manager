@@ -14,6 +14,7 @@ from residential_ip_manager.application.orchestrator import ConnectionOrchestrat
 from residential_ip_manager.config import AppSettings
 from residential_ip_manager.platform.windows_environment import (
     REPAIR_ORPHANED_OPENVPN_ROUTES,
+    REPAIR_SPLIT_ROUTES_MANUALLY,
     WindowsEnvironmentDetector,
 )
 from residential_ip_manager.ui.main_window import MainWindow
@@ -191,12 +192,21 @@ class DesktopBridge(QObject):
     async def _repair_environment(self, action: str) -> None:
         repair_error = ""
         try:
-            if action != REPAIR_ORPHANED_OPENVPN_ROUTES:
+            if action == REPAIR_ORPHANED_OPENVPN_ROUTES:
+                removed = await self.detector.repair_orphaned_openvpn_routes()
+                repair_mode = "自动"
+            elif action == REPAIR_SPLIT_ROUTES_MANUALLY:
+                removed = await self.detector.repair_split_routes_manually()
+                repair_mode = "手动"
+            else:
                 raise ValueError(f"不支持的环境修复操作：{action}")
-            removed = await self.detector.repair_orphaned_openvpn_routes()
             if removed:
+                await self.detector.flush_dns_cache()
                 targets = ", ".join(route.destination for route in removed)
-                self.log_received.emit("info", f"已清理 OpenVPN 残留路由：{targets}")
+                self.log_received.emit(
+                    "info",
+                    f"已{repair_mode}清理 OpenVPN 残留路由：{targets}",
+                )
         except Exception as exc:
             repair_error = str(exc)
 

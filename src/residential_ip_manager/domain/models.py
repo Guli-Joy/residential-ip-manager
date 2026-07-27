@@ -79,6 +79,8 @@ class ComponentCheck:
     required: bool = True
     repair_action: str = ""
     repair_targets: tuple[str, ...] = ()
+    manual_repair_action: str = ""
+    manual_repair_targets: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

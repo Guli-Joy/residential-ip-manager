@@ -40,7 +40,7 @@
 | 出口复核 | 连接后重新检测公网 IP、国家、ASN 和住宅属性，失败即回滚并尝试下一节点 |
 | 自动恢复 | 一键连接最多尝试多个候选；连续失败达到阈值后优先同国家切换 |
 | DNS 防泄漏 | Windows Filtering Platform 阻止隧道外 DNS，断开后恢复并刷新缓存 |
-| 环境治理 | 检测 Clash、OpenVPN、TAP/Wintun、端口、冲突进程和残留路由 |
+| 环境治理 | 检测 Clash、OpenVPN、TAP/Wintun、端口、冲突进程，并提供自动/手动残留路由修复 |
 | 本地状态 | SQLite WAL 保存节点、快照和冷却状态，快速展示缓存后后台刷新 |
 | 中文界面 | ISO 国家代码统一中文显示，默认按国家、延迟、数值 IP 稳定排序 |
 
@@ -130,8 +130,9 @@ flowchart LR
 | Python | 3.12–3.14，仅源码运行需要 | Release 单文件版不要求安装 Python |
 
 环境检测会核对 Windows、管理员权限、OpenVPN、虚拟网卡、Clash 配置与进程、mixed/SOCKS/
-controller 端口、外部 OpenVPN 冲突和残留分流路由。自动修复只在 `openvpn.exe` 已退出、
-目标接口属于 OpenVPN/TAP/Wintun 且用户确认后，按目标网段和接口编号精确删除残留路由。
+controller 端口、外部 OpenVPN 冲突和残留分流路由。自动修复只处理 `openvpn.exe` 已退出且
+接口归属明确的 OpenVPN/TAP/Wintun 路由；接口归属不明确时可使用手动修复，在二次确认后按
+目标网段、下一跳和接口编号精确删除。任何修复都不会终止外部 VPN 进程或修改普通默认网关。
 
 ## 快速开始
 
@@ -250,8 +251,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 自动发布规则：
 
 ```powershell
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 `release.yml` 会在 `windows-latest` 上执行 Ruff、Pyright、源码编译、依赖检查和 EXE 构建，随后
@@ -272,7 +273,7 @@ git push origin v0.1.2
 | --- | --- |
 | 国家数量少 | 只统计当前同时通过严格分类和 TCP 探活的国家；稍后刷新不一定得到相同结果 |
 | VPNGate 获取失败 | 先确认 Clash mixed port 可用；程序会依次尝试 Clash、国内直连和缓存 |
-| OpenVPN 无法连接 | 断开 OpenVPN GUI 中已有连接，检查 TAP/Wintun 和环境检测中的残留路由 |
+| OpenVPN 无法连接 | 断开 OpenVPN GUI 中已有连接；环境检测中优先自动修复，接口归属不明时核对目标后手动修复 |
 | 连接后出口不一致 | 程序会拒绝该节点并尝试下一候选；查看日志中的国家、ASN 或住宅证据差异 |
 | DNS 检测显示泄漏 | 确认以管理员权限运行并查看 OpenVPN 日志是否成功安装 WFP block filters |
 | 任务栏仍是旧图标 | 退出旧进程、取消旧固定项，再从最新 EXE 启动并重新固定 |

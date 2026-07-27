@@ -33,6 +33,14 @@ CLASH_PROCESS_NAMES = (
 SPLIT_DEFAULT_DESTINATIONS = frozenset({"0.0.0.0/1", "128.0.0.0/1"})
 OPENVPN_ADAPTER_MARKERS = ("openvpn", "tap", "wintun", "data channel offload")
 REPAIR_ORPHANED_OPENVPN_ROUTES = "repair_orphaned_openvpn_routes"
+REPAIR_SPLIT_ROUTES_MANUALLY = "repair_split_routes_manually"
+POWERSHELL_UTF8_PREFIX = (
+    "$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new();"
+)
+
+
+def _powershell_utf8(script: str) -> str:
+    return POWERSHELL_UTF8_PREFIX + script
 
 
 def _background_process_options() -> dict[str, Any]:
@@ -393,7 +401,13 @@ class WindowsEnvironmentDetector:
             "ConvertTo-Json -Compress"
         )
         result = await self.runner.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                _powershell_utf8(script),
+            ],
             timeout=8,
         )
         if result.returncode != 0 or not result.stdout.strip():
@@ -439,7 +453,13 @@ class WindowsEnvironmentDetector:
             "Select-Object Name,InterfaceDescription,Status | ConvertTo-Json -Compress"
         )
         result = await self.runner.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                _powershell_utf8(script),
+            ],
             timeout=8,
         )
         if result.returncode != 0 or not result.stdout.strip():
@@ -467,7 +487,13 @@ class WindowsEnvironmentDetector:
             "ConvertTo-Json -Compress"
         )
         result = await self.runner.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                _powershell_utf8(script),
+            ],
             timeout=8,
         )
         if result.returncode != 0 or not result.stdout.strip():
@@ -496,6 +522,16 @@ class WindowsEnvironmentDetector:
         )
 
     async def repair_orphaned_openvpn_routes(self) -> list[RouteInfo]:
+        return await self._repair_split_default_routes(allow_unverified=False)
+
+    async def repair_split_routes_manually(self) -> list[RouteInfo]:
+        return await self._repair_split_default_routes(allow_unverified=True)
+
+    async def _repair_split_default_routes(
+        self,
+        *,
+        allow_unverified: bool,
+    ) -> list[RouteInfo]:
         if not is_windows():
             raise RuntimeError("仅 Windows 支持修复 OpenVPN 残留路由")
         if not self.admin_checker():
@@ -510,7 +546,12 @@ class WindowsEnvironmentDetector:
         if active_openvpn:
             raise RuntimeError("修复前检测到 openvpn.exe 已启动，已取消路由修改")
 
-        candidates = [route for route in routes if self._is_openvpn_split_route(route)]
+        candidates = [
+            route
+            for route in routes
+            if route.interface_index > 0
+            and (allow_unverified or self._is_openvpn_split_route(route))
+        ]
         if not candidates:
             if routes:
                 raise RuntimeError("分流路由不属于 OpenVPN/TAP/Wintun 网卡，程序不会删除")
@@ -518,19 +559,31 @@ class WindowsEnvironmentDetector:
 
         unique_candidates = list(
             {
-                (route.destination, route.interface_index): route
+                (route.destination, route.next_hop, route.interface_index): route
                 for route in candidates
             }.values()
         )
         for route in unique_candidates:
+            next_hop = (
+                f"-NextHop '{route.next_hop}' "
+                if route.next_hop
+                else ""
+            )
             script = (
                 "Remove-NetRoute -AddressFamily IPv4 "
                 f"-DestinationPrefix '{route.destination}' "
+                f"{next_hop}"
                 f"-InterfaceIndex {route.interface_index} "
                 "-Confirm:$false -ErrorAction Stop"
             )
             result = await self.runner.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    _powershell_utf8(script),
+                ],
                 timeout=8,
             )
             if result.returncode != 0:
@@ -539,12 +592,13 @@ class WindowsEnvironmentDetector:
 
         remaining = await self.split_default_routes()
         removed_keys = {
-            (route.destination, route.interface_index) for route in unique_candidates
+            (route.destination, route.next_hop, route.interface_index)
+            for route in unique_candidates
         }
         still_present = [
             route
             for route in remaining
-            if (route.destination, route.interface_index) in removed_keys
+            if (route.destination, route.next_hop, route.interface_index) in removed_keys
         ]
         if still_present:
             targets = ", ".join(route.destination for route in still_present)
@@ -616,6 +670,12 @@ class WindowsEnvironmentDetector:
             f"{route.destination} -> {route.next_hop or 'on-link'} | "
             f"{route.interface} (接口 {route.interface_index})"
             for route in repairable_routes
+        )
+        manual_route_targets = tuple(
+            f"{route.destination} -> {route.next_hop or 'on-link'} | "
+            f"{route.interface} (接口 {route.interface_index})"
+            for route in split_routes
+            if route.interface_index > 0
         )
         if not split_routes:
             split_route_detail = "未发现 OpenVPN 分流路由残留"
@@ -730,6 +790,12 @@ class WindowsEnvironmentDetector:
                         REPAIR_ORPHANED_OPENVPN_ROUTES if repairable_routes else ""
                     ),
                     repair_targets=route_targets,
+                    manual_repair_action=(
+                        REPAIR_SPLIT_ROUTES_MANUALLY
+                        if manual_route_targets and not active_openvpn
+                        else ""
+                    ),
+                    manual_repair_targets=manual_route_targets,
                 ),
             ]
         )

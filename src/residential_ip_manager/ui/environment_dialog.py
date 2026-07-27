@@ -42,8 +42,9 @@ class EnvironmentDialog(QDialog):
         self.setModal(False)
 
         self._model = EnvironmentCheckTableModel(parent=self)
-        self._repair_action = ""
-        self._repair_targets: tuple[str, ...] = ()
+        self._auto_repair_action = ""
+        self._manual_repair_action = ""
+        self._manual_repair_targets: tuple[str, ...] = ()
         self._build_ui()
         self._wire_events()
         self.set_empty()
@@ -105,14 +106,23 @@ class EnvironmentDialog(QDialog):
         footer.addWidget(self.progress)
         footer.addStretch(1)
 
-        self.repair_button = QPushButton("修复环境 (&F)", content)
-        self.repair_button.setIcon(
+        self.auto_repair_button = QPushButton("自动修复 (&A)", content)
+        self.auto_repair_button.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
         )
-        self.repair_button.setToolTip("安全清理 OpenVPN 退出后残留的分流路由 (Alt+F)")
-        self.repair_button.setAccessibleDescription("确认后精确删除 OpenVPN 残留路由")
-        self.repair_button.hide()
-        footer.addWidget(self.repair_button)
+        self.auto_repair_button.setToolTip("自动处理可安全识别的 OpenVPN 残留项 (Alt+A)")
+        self.auto_repair_button.setAccessibleDescription("仅自动处理归属明确的 OpenVPN 残留项")
+        self.auto_repair_button.hide()
+        footer.addWidget(self.auto_repair_button)
+
+        self.manual_repair_button = QPushButton("手动修复 (&F)", content)
+        self.manual_repair_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        )
+        self.manual_repair_button.setToolTip("查看精确目标并确认清理分流路由 (Alt+F)")
+        self.manual_repair_button.setAccessibleDescription("确认目标后手动清理分流路由")
+        self.manual_repair_button.hide()
+        footer.addWidget(self.manual_repair_button)
 
         self.check_button = QPushButton("重新检测 (&R)", content)
         self.check_button.setIcon(
@@ -218,7 +228,8 @@ class EnvironmentDialog(QDialog):
         return page
 
     def _wire_events(self) -> None:
-        self.repair_button.clicked.connect(self._request_repair)
+        self.auto_repair_button.clicked.connect(self._request_auto_repair)
+        self.manual_repair_button.clicked.connect(self._request_manual_repair)
         self.check_button.clicked.connect(self._request_check)
         self.close_button.clicked.connect(self.close)
 
@@ -228,24 +239,32 @@ class EnvironmentDialog(QDialog):
         self.check_requested.emit()
 
     @Slot()
-    def _request_repair(self) -> None:
-        if not self._repair_action:
+    def _request_auto_repair(self) -> None:
+        if not self._auto_repair_action:
             return
-        target_text = "\n".join(f"- {target}" for target in self._repair_targets)
+        action = self._auto_repair_action
+        self.set_repairing(manual=False)
+        self.repair_requested.emit(action)
+
+    @Slot()
+    def _request_manual_repair(self) -> None:
+        if not self._manual_repair_action:
+            return
+        target_text = "\n".join(f"- {target}" for target in self._manual_repair_targets)
         answer = QMessageBox.warning(
             self,
-            "确认修复 OpenVPN 残留路由",
-            "OpenVPN 已退出，但以下分流路由仍在系统中：\n\n"
+            "确认手动清理分流路由",
+            "以下分流路由的接口归属可能无法自动确认：\n\n"
             f"{target_text}\n\n"
-            "程序只会按目标网段和接口编号精确删除以上路由，"
-            "不会关闭 OpenVPN GUI，也不会修改普通默认网关。",
+            "请先确认其他 VPN/TUN 已断开。程序将按目标网段、下一跳和接口编号"
+            "精确删除以上路由，不会关闭 Clash/OpenVPN GUI，也不会修改普通默认网关。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        action = self._repair_action
-        self.set_repairing()
+        action = self._manual_repair_action
+        self.set_repairing(manual=True)
         self.repair_requested.emit(action)
 
     @Slot(object)
@@ -255,7 +274,7 @@ class EnvironmentDialog(QDialog):
         self.progress.hide()
         self.check_button.setEnabled(True)
 
-        repairable = next(
+        auto_repairable = next(
             (
                 check
                 for check in report.checks
@@ -263,13 +282,43 @@ class EnvironmentDialog(QDialog):
             ),
             None,
         )
-        self._repair_action = repairable.repair_action if repairable else ""
-        self._repair_targets = repairable.repair_targets if repairable else ()
-        self.repair_button.setVisible(repairable is not None)
-        self.repair_button.setEnabled(repairable is not None)
+        manual_repairable = next(
+            (
+                check
+                for check in report.checks
+                if not check.ok
+                and check.manual_repair_action
+                and check.manual_repair_targets
+            ),
+            None,
+        )
+        self._auto_repair_action = (
+            auto_repairable.repair_action if auto_repairable else ""
+        )
+        self._manual_repair_action = (
+            manual_repairable.manual_repair_action if manual_repairable else ""
+        )
+        self._manual_repair_targets = (
+            manual_repairable.manual_repair_targets if manual_repairable else ()
+        )
 
         failed_required = sum(1 for check in report.checks if check.required and not check.ok)
         failed_optional = sum(1 for check in report.checks if not check.required and not check.ok)
+        show_repair_controls = failed_required > 0
+        self.auto_repair_button.setVisible(show_repair_controls)
+        self.auto_repair_button.setEnabled(auto_repairable is not None)
+        self.manual_repair_button.setVisible(show_repair_controls)
+        self.manual_repair_button.setEnabled(manual_repairable is not None)
+        self.auto_repair_button.setToolTip(
+            "自动处理可安全识别的 OpenVPN 残留项 (Alt+A)"
+            if auto_repairable is not None
+            else "当前问题无法安全自动修复，请查看详情或使用手动修复"
+        )
+        self.manual_repair_button.setToolTip(
+            "查看精确目标并确认清理分流路由 (Alt+F)"
+            if manual_repairable is not None
+            else "当前没有可安全提供给手动修复的目标"
+        )
         if report.ready:
             self._set_summary(
                 "success",
@@ -291,24 +340,27 @@ class EnvironmentDialog(QDialog):
         self.progress.setRange(0, 0)
         self.progress.show()
         self.check_button.setEnabled(False)
-        self.repair_button.setEnabled(False)
+        self.auto_repair_button.setEnabled(False)
+        self.manual_repair_button.setEnabled(False)
         self._set_summary("info", "正在检测", "正在检查本地组件和网络配置")
 
-    @Slot()
-    def set_repairing(self) -> None:
+    def set_repairing(self, *, manual: bool) -> None:
         self.pages.setCurrentIndex(self.PAGE_RESULTS)
         self.progress.setRange(0, 0)
         self.progress.show()
         self.check_button.setEnabled(False)
-        self.repair_button.setEnabled(False)
-        self._set_summary("info", "正在修复", "正在安全清理 OpenVPN 残留分流路由")
+        self.auto_repair_button.setEnabled(False)
+        self.manual_repair_button.setEnabled(False)
+        mode = "手动" if manual else "自动"
+        self._set_summary("info", f"正在{mode}修复", "正在安全清理 OpenVPN 残留分流路由")
 
     @Slot()
     def set_empty(self) -> None:
         self.pages.setCurrentIndex(self.PAGE_EMPTY)
         self.progress.hide()
         self.check_button.setEnabled(True)
-        self.repair_button.hide()
+        self.auto_repair_button.hide()
+        self.manual_repair_button.hide()
         self._set_summary("neutral", "尚未检测", "检测 OpenVPN、Clash 和 Windows 网络组件")
 
     @Slot(str)
@@ -317,7 +369,8 @@ class EnvironmentDialog(QDialog):
         self.pages.setCurrentIndex(self.PAGE_ERROR)
         self.progress.hide()
         self.check_button.setEnabled(True)
-        self.repair_button.setEnabled(bool(self._repair_action))
+        self.auto_repair_button.setEnabled(bool(self._auto_repair_action))
+        self.manual_repair_button.setEnabled(bool(self._manual_repair_action))
         self._set_summary("error", "检测失败", "未能完成运行环境检测")
 
     @Slot(str)
