@@ -1,0 +1,96 @@
+from pathlib import Path
+
+
+ROOT = Path(SPECPATH)
+SRC = ROOT / "src"
+PACKAGE = SRC / "residential_ip_manager"
+ICON = PACKAGE / "assets" / "app-icon.ico"
+PNG_ICON = PACKAGE / "assets" / "app-icon.png"
+
+
+a = Analysis(
+    [str(PACKAGE / "main.py")],
+    pathex=[str(SRC)],
+    binaries=[],
+    datas=[
+        (str(ICON), "residential_ip_manager/assets"),
+        (str(PNG_ICON), "residential_ip_manager/assets"),
+    ],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        "_pytest",
+        "anyio._backends._trio",
+        "click",
+        "httpx._main",
+        "PIL",
+        "PyQt5",
+        "PyQt6",
+        "PySide2",
+        "PySide6.Qt3DCore",
+        "PySide6.Qt3DRender",
+        "PySide6.QtBluetooth",
+        "PySide6.QtCharts",
+        "PySide6.QtDataVisualization",
+        "PySide6.QtDesigner",
+        "PySide6.QtHelp",
+        "PySide6.QtLocation",
+        "PySide6.QtMultimedia",
+        "PySide6.QtNetworkAuth",
+        "PySide6.QtOpenGL",
+        "PySide6.QtPdf",
+        "PySide6.QtPositioning",
+        "PySide6.QtPrintSupport",
+        "PySide6.QtQml",
+        "PySide6.QtQuick",
+        "PySide6.QtRemoteObjects",
+        "PySide6.QtScxml",
+        "PySide6.QtSensors",
+        "PySide6.QtSerialPort",
+        "PySide6.QtSpatialAudio",
+        "PySide6.QtSql",
+        "PySide6.QtSvg",
+        "PySide6.QtTest",
+        "PySide6.QtWebChannel",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.QtWebSockets",
+        "doctest",
+        "IPython",
+        "matplotlib",
+        "numpy",
+        "pandas",
+        "pygments",
+        "pytest",
+        "rich",
+        "tkinter",
+        "trio",
+        "unittest",
+    ],
+    noarchive=False,
+    optimize=2,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name="ResidentialIPManager",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=str(ICON),
+    uac_admin=True,
+)

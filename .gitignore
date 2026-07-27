@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+tests/
+
+# Build and release output
+build/
+dist/
+artifacts/
+*.pkg
+
+# Application runtime data and credentials
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.ovpn
+*.auth
+*.key
+*.pem
+*.crt
+network_snapshot.json
+settings.json
+runtime/
+
+# Editors and Windows
+.idea/
+.vscode/
+*.code-workspace
+Thumbs.db
+Desktop.ini
