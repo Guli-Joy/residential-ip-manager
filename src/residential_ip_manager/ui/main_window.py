@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMenu,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -389,6 +390,7 @@ class MainWindow(QMainWindow):
         self.node_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.node_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.node_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.node_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.node_table.setWordWrap(False)
         self.node_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.node_table.verticalHeader().hide()
@@ -564,6 +566,7 @@ class MainWindow(QMainWindow):
         self.auto_failover_checkbox.toggled.connect(self.auto_failover_changed)
         self.log_toggle.toggled.connect(self.set_log_drawer_visible)
         self.clear_log_button.clicked.connect(self.clear_logs)
+        self.node_table.customContextMenuRequested.connect(self._show_node_context_menu)
         self._proxy_model.rowsInserted.connect(self._proxy_rows_changed)
         self._proxy_model.rowsRemoved.connect(self._proxy_rows_changed)
         self._proxy_model.modelReset.connect(self._proxy_rows_changed)
@@ -722,6 +725,59 @@ class MainWindow(QMainWindow):
     @Slot()
     def _emit_switch_ip(self) -> None:
         self.switch_ip_requested.emit(str(self.country_combo.currentData() or ""))
+
+    @Slot(QPoint)
+    def _show_node_context_menu(self, position: QPoint) -> None:
+        index = self.node_table.indexAt(position)
+        if not index.isValid():
+            return
+
+        self.node_table.selectRow(index.row())
+        self.node_table.setCurrentIndex(index)
+        node = self._proxy_model.node_at(index.row())
+        if node is None:
+            return
+
+        state = self._snapshot.state
+        busy = self._presentational_busy or state in BUSY_STATES
+        connected = state in {ConnectionState.CONNECTED, ConnectionState.DEGRADED}
+        active = connected and node.id == self._snapshot.active_node_id
+        has_connection_context = bool(
+            self._snapshot.active_node_id
+            or self._snapshot.exit_ip
+            or self._snapshot.connected_since
+            or self._snapshot.metadata.get("tunnel_connected") is True
+        )
+        can_connect = not busy and (
+            connected
+            or (
+                state in {ConnectionState.IDLE, ConnectionState.ERROR}
+                and not has_connection_context
+            )
+        )
+
+        menu = QMenu(self.node_table)
+        if active:
+            action_text = "当前正在使用此节点"
+        elif connected:
+            action_text = "切换到此节点"
+        else:
+            action_text = "连接此节点"
+        connect_action = menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward),
+            action_text,
+        )
+        connect_action.setEnabled(can_connect and not active)
+        connect_action.triggered.connect(
+            lambda _checked=False, node_id=node.id: self.connect_requested.emit(node_id)
+        )
+
+        menu.addSeparator()
+        copy_action = menu.addAction("复制 IP 地址")
+        copy_action.triggered.connect(
+            lambda _checked=False, ip=node.ip: QApplication.clipboard().setText(ip)
+        )
+        menu.exec(self.node_table.viewport().mapToGlobal(position))
 
     @Slot(int)
     def _country_changed(self, _index: int) -> None:

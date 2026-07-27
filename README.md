@@ -36,7 +36,7 @@
 | 严格住宅判定 | `ip-api`、`ipapi.is`、rDNS、ASN/ISP 与家庭运营商规则交叉验证 |
 | 安全配置处理 | 校验 CSV 公网 IP 与 OVPN `remote` 一致，拒绝脚本、插件和危险指令 |
 | 可用性检测 | 有并发上限的 TCP 探活、失败冷却、活动出口高频健康检查 |
-| 链式连接 | Clash 负责 OpenVPN 传输中转，VPNGate 负责最终公网出口 |
+| 链式连接 | Clash 负责 OpenVPN 传输中转；节点表右键可连接或切换到指定 VPNGate 出口 |
 | 出口复核 | 连接后重新检测公网 IP、国家、ASN 和住宅属性，失败即回滚并尝试下一节点 |
 | 自动恢复 | 一键连接最多尝试多个候选；连续失败达到阈值后优先同国家切换 |
 | DNS 防泄漏 | Windows Filtering Platform 阻止隧道外 DNS，断开后恢复并刷新缓存 |
@@ -143,7 +143,7 @@ controller 端口、外部 OpenVPN 冲突和残留分流路由。自动修复只
 3. 安装 OpenVPN Community，并断开 OpenVPN GUI 中已有的活动连接；
 4. 双击 EXE，接受一次 Windows UAC；
 5. 打开“环境检测”，处理所有必需项；
-6. 刷新节点，按国家筛选后选择节点，或直接点击“一键连接”。
+6. 刷新节点，按国家筛选后选择节点，或直接点击“一键连接”；连接后可右键目标行切换到指定节点。
 
 PowerShell 校验下载文件：
 
@@ -250,8 +250,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 自动发布规则：
 
 ```powershell
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 `release.yml` 会在 `windows-latest` 上执行 Ruff、Pyright、源码编译、依赖检查和 EXE 构建，随后
