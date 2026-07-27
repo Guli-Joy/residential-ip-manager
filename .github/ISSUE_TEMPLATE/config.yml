@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Guli-Joy/residential-ip-manager/security/advisories/new
+    about: 私密报告凭据、配置注入、路由越权或隐私泄露问题
